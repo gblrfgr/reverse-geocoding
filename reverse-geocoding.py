@@ -113,10 +113,24 @@ async def main():
         prog="reverse-geocode",
         description="Converts GeoJSON data to a CSV table with street addresses",
     )
-    parser.add_argument("filename")
-    parser.add_argument("-o", "--output")
-    parser.add_argument("-l", "--logfile")
-    parser.add_argument("-v", "--verbose", action="store_true")
+    parser.add_argument("filename", nargs=1, help="input file name")
+    parser.add_argument(
+        "-o", "--output", required=True, nargs=1, help="output file name"
+    )
+    parser.add_argument(
+        "-l",
+        "--logfile",
+        required=False,
+        nargs=1,
+        help="output file for logging (not required, by default will log to stdout)",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        required=False,
+        help="turn on to get profiling and other info logs",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
