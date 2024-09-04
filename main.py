@@ -56,7 +56,6 @@ async def get_address(
         },
     ) as response:
         body = await response.json()
-        print(body)
         return BuildingInfo(
             coord.longitude, coord.latitude, body["display_name"], coord.label
         )
@@ -100,7 +99,6 @@ async def main():
         writer = csv.writer(outputfile)
         writer.writerow(["Latitude", "Longitude", "Street Address", "Label"])
         writer.writerows(addresses)
-    print(len([address for address in addresses]))
 
 
 if __name__ == "__main__":
