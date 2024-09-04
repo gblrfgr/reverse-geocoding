@@ -46,6 +46,17 @@ def get_coords(doc: typing.Any) -> list[BuildingCoord]:
 async def get_address(
     session: aiohttp.ClientSession, coord: BuildingCoord
 ) -> BuildingInfo:
+    """Retrieve address information for a single building using the Nominatim
+    API. Uses the highest level of detail possible.
+
+    Args:
+        session (aiohttp.ClientSession): the current aiohttp session
+        coord (BuildingCoord): the coordinate and label of the building
+
+    Returns:
+        BuildingInfo: coordinate, street address, and label of the building
+    """
+    # TODO: remove hardcoded URL
     async with session.get(
         "http://localhost:8088/reverse",
         params={
@@ -64,6 +75,14 @@ async def get_address(
 async def get_addresses(
     coords: list[BuildingCoord],
 ) -> list[asyncio.Future[BuildingInfo]]:
+    """Gather building information for a list of building coordinates
+
+    Args:
+        coords (list[BuildingCoord]): building coordinates to query
+
+    Returns:
+        list[asyncio.Future[BuildingInfo]]: futures for building information
+    """
     async with aiohttp.ClientSession() as session:
         tasks = [get_address(session, coord) for coord in coords]
         results = await asyncio.gather(*tasks)
@@ -95,14 +114,20 @@ async def main():
     else:
         with f:
             coords = get_coords(json.load(f))
-    # Through the power of async/await black magic, we can perform a large 
+    # Through the power of async/await black magic, we can perform a large
     # amount of queries at the same time!
-    addresses = await get_addresses(coords)
+    buildings = await get_addresses(coords)
 
-    with open("test.csv", "w", newline="") as outputfile:
-        writer = csv.writer(outputfile)
-        writer.writerow(["Latitude", "Longitude", "Street Address", "Label"])
-        writer.writerows(addresses)
+    try:
+        f = open(args.output, "w", newline="")
+    except OSError:
+        logger.critical("Error creating output file")
+        exit(-1)
+    else:
+        with f:
+            writer = csv.writer(f)
+            writer.writerow(["Latitude", "Longitude", "Street Address", "Label"])
+            writer.writerows(buildings)
 
 
 if __name__ == "__main__":
