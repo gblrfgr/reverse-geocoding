@@ -1,10 +1,11 @@
 import argparse
 import logging
-import nominatim
-import polars as pl
 import json
 import typing
+import csv
 import collections
+import asyncio
+import aiohttp
 
 # Basic setup
 logger = logging.getLogger(__name__)
@@ -12,6 +13,10 @@ logger = logging.getLogger(__name__)
 # Represents the coordinate and label for a single building in the dataset
 BuildingCoord = collections.namedtuple(
     "BuildingCoord", ["longitude", "latitude", "label"]
+)
+# Represents the street address, coordinate, and label for a single building in the dataset
+BuildingInfo = collections.namedtuple(
+    "BuildingInfo", ["longitude", "latitude", "street_address", "label"]
 )
 
 
@@ -38,7 +43,33 @@ def get_coords(doc: typing.Any) -> list[BuildingCoord]:
     ]
 
 
-def main():
+async def get_address(
+    session: aiohttp.ClientSession, coord: BuildingCoord
+) -> BuildingInfo:
+    async with session.get(
+        "http://localhost:8088/reverse",
+        params={
+            "lat": str(coord.latitude),
+            "lon": str(coord.longitude),
+            "format": "json",
+            "zoom": 18,
+        },
+    ) as response:
+        body = await response.json()
+        print(body)
+        return BuildingInfo(
+            coord.longitude, coord.latitude, body["display_name"], coord.label
+        )
+
+
+async def get_addresses(coords: list[BuildingCoord]) -> list[asyncio.Future[BuildingInfo]]:
+    async with aiohttp.ClientSession() as session:
+        tasks = [get_address(session, coord) for coord in coords]
+        results = await asyncio.gather(*tasks)
+    return results
+
+
+async def main():
     parser = argparse.ArgumentParser(
         prog="reverse-geocode",
         description="Converts GeoJSON data to a CSV table with street addresses",
@@ -58,13 +89,19 @@ def main():
     try:
         f = open(args.filename, "r")
     except FileNotFoundError:
-        logger.critical("File \"%s\" not found", args.filename)
+        logger.critical('File "%s" not found', args.filename)
         exit(-1)
     else:
         with f:
             coords = get_coords(json.load(f))
-    print(coords)
+    addresses = await get_addresses(coords)
+
+    with open("test.csv", "w", newline="") as outputfile:
+        writer = csv.writer(outputfile)
+        writer.writerow(["Latitude", "Longitude", "Street Address", "Label"])
+        writer.writerows(addresses)
+    print(len([address for address in addresses]))
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
