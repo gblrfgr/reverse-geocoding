@@ -113,9 +113,9 @@ async def main():
         prog="reverse-geocode",
         description="Converts GeoJSON data to a CSV table with street addresses",
     )
-    parser.add_argument("filename", nargs=1, help="input file name")
+    parser.add_argument("filename", help="input file name")
     parser.add_argument(
-        "-o", "--output", required=True, nargs=1, help="output file name"
+        "-o", "--output", required=True, help="output file name"
     )
     parser.add_argument(
         "-l",
