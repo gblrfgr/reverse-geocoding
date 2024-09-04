@@ -61,7 +61,9 @@ async def get_address(
         )
 
 
-async def get_addresses(coords: list[BuildingCoord]) -> list[asyncio.Future[BuildingInfo]]:
+async def get_addresses(
+    coords: list[BuildingCoord],
+) -> list[asyncio.Future[BuildingInfo]]:
     async with aiohttp.ClientSession() as session:
         tasks = [get_address(session, coord) for coord in coords]
         results = await asyncio.gather(*tasks)
@@ -93,6 +95,8 @@ async def main():
     else:
         with f:
             coords = get_coords(json.load(f))
+    # Through the power of async/await black magic, we can perform a large 
+    # amount of queries at the same time!
     addresses = await get_addresses(coords)
 
     with open("test.csv", "w", newline="") as outputfile:
