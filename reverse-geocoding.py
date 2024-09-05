@@ -54,7 +54,7 @@ def get_coords(doc: typing.Any) -> list[BuildingCoord]:
 
 
 async def get_address(
-    session: aiohttp.ClientSession, coord: BuildingCoord
+    session: aiohttp.ClientSession, coord: BuildingCoord, apikey: str
 ) -> BuildingInfo:
     """Retrieve address information for a single building using the Nominatim
     API. Uses the highest level of detail possible.
@@ -62,6 +62,7 @@ async def get_address(
     Args:
         session (aiohttp.ClientSession): the current aiohttp session
         coord (BuildingCoord): the coordinate and label of the building
+        apikey (str): the Google Maps API key to use
 
     Returns:
         BuildingInfo: coordinate, street address, and label of the building
@@ -72,35 +73,62 @@ async def get_address(
     global cumulative_lookup_lock
     started = time.time()
     async with session.get(
-        "http://localhost:8088/reverse",
+        "https://maps.googleapis.com/maps/api/geocode/json",
         params={
-            "lat": str(coord.latitude),
-            "lon": str(coord.longitude),
-            "format": "json",
-            "zoom": 18,
+            "latlng": f"{coord.latitude},{coord.longitude}",
+            "key": apikey,
+            "result_type": "street_address",
         },
     ) as response:
         body = await response.json()
     async with cumulative_lookup_lock:
         cumulative_lookup_time += time.time() - started
+    match body["status"]:
+        case "OK":
+            street_address = body["results"][0]["formatted_address"]
+        case "ZERO_RESULTS":
+            street_address = "NO MATCHING ADDRESS"
+            logger.warning(
+                "No matching address found (longitude %f, latitude %f)",
+                coord.longitude,
+                coord.latitude,
+            )
+        case "OVER_QUERY_LIMIT":
+            logger.critical("API quota exceeded")
+            exit(-1)
+        case "REQUEST_DENIED":
+            logger.critical("API request denied (likely invalid API key)")
+            exit(-1)
+        case "INVALID_REQUEST" | "UNKNOWN_ERROR":
+            # TODO: include retry logic
+            street_address = "REVERSE GEOCODING ERROR"
+            logger.warning(
+                "Reverse geocoding error encountered (longitude %f, latitude %f)",
+                coord.longitude,
+                coord.latitude,
+            )
     return BuildingInfo(
-        coord.longitude, coord.latitude, body["display_name"], coord.label
+        coord.longitude,
+        coord.latitude,
+        street_address,
+        coord.label,
     )
 
 
 async def get_addresses(
-    coords: list[BuildingCoord],
+    coords: list[BuildingCoord], apikey: str
 ) -> list[asyncio.Future[BuildingInfo]]:
     """Gather building information for a list of building coordinates
 
     Args:
         coords (list[BuildingCoord]): building coordinates to query
+        apikey (str): Google Maps API key to use
 
     Returns:
         list[asyncio.Future[BuildingInfo]]: futures for building information
     """
     async with aiohttp.ClientSession() as session:
-        tasks = [get_address(session, coord) for coord in coords]
+        tasks = [get_address(session, coord, apikey) for coord in coords]
         results = await asyncio.gather(*tasks)
     return results
 
@@ -116,6 +144,9 @@ async def main():
     parser.add_argument("filename", help="input file name")
     parser.add_argument(
         "-o", "--output", required=True, help="output file name"
+    )
+    parser.add_argument(
+        "-a", "--apikey", required=True, help="Google Maps api key"
     )
     parser.add_argument(
         "-l",
@@ -136,7 +167,7 @@ async def main():
     logging.basicConfig(
         filename=args.logfile,
         level=(logging.DEBUG if args.verbose else logging.WARNING),
-        format="%(asctime)s\t%(levelname)s:\t%(message)s",
+        format="%(asctime)s %(levelname)s: %(message)s",
     )
 
     try:
@@ -151,7 +182,7 @@ async def main():
     # Through the power of async/await black magic, we can perform a large
     # amount of queries at the same time!
     started = time.time()
-    buildings = await get_addresses(coords)
+    buildings = await get_addresses(coords, args.apikey)
     total_lookup_time = time.time() - started
 
     try:
